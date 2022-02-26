@@ -7,12 +7,9 @@ cycler==0.10.0
 docopt==0.6.2
 enum34==1.1.6
 future==0.16.0
-# En el original faltaba gym
 gym
 idna==2.7
 imageio==2.4.1
-# jsonpickle==0.9.6 
-# sacred 0.8.2 has requirement jsonpickle<2.0,>=1.2
 jsonpickle
 kiwisolver==1.0.1
 matplotlib==3.0.0
@@ -29,8 +26,6 @@ portpicker==1.2.0
 probscale==0.2.3
 protobuf==3.6.1
 py==1.6.0
-# pygame==1.9.4
-# smac 1.0.0 has requirement pygame>=2.0.0
 pygame
 pyparsing==2.2.2
 pysc2==3.0.0
