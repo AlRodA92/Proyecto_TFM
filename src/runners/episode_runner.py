@@ -1,8 +1,14 @@
+from pygame import K_0
 from envs import REGISTRY as env_REGISTRY
 from functools import partial
 from components.episode_buffer import EpisodeBatch
 import numpy as np
+import sys
 
+# Get the multitask functions
+sys.path.insert(0,'/home/aroman/TFM/Código/Proyecto_TFM/Proyecto_TFM/src/Multi_task')
+
+from rewards_multitask import reward_task_objetive, reward_task_survive, reward_task_kill, reward_scalarization
 
 class EpisodeRunner:
 
@@ -49,7 +55,10 @@ class EpisodeRunner:
         self.reset()
 
         terminated = False
+        terminated_task = False
         episode_return = 0
+        task_reward = 0
+        extrinsic_reward = 0
         self.mac.init_hidden(batch_size=self.batch_size)
 
         while not terminated:
@@ -67,8 +76,23 @@ class EpisodeRunner:
             actions = self.mac.select_actions(self.batch, t_ep=self.t, t_env=self.t_env, test_mode=test_mode)
 
             reward, terminated, env_info = self.env.step(actions[0])
-            episode_return += reward
 
+            # Check if the multi-objetive option is set and compute the aditional reward and
+            # the total reward scalarization
+            if self.args.task == 'objetive':
+                reward_objetive,terminated_task = reward_task_objetive(self,terminated)
+                terminated = terminated_task
+                reward, reward_ex, reward_objetive = reward_scalarization(self,reward,reward_objetive)
+                task_reward += reward_objetive
+                extrinsic_reward += reward_ex
+            elif self.args.task == 'kill':
+                reward_kill = reward_task_kill(self)
+                reward, reward_ex, reward_kill = reward_scalarization(self,reward,reward_kill)
+                task_reward += reward_kill
+                extrinsic_reward += reward_ex
+                
+            episode_return += reward
+    
             post_transition_data = {
                 "actions": actions,
                 "reward": [(reward,)],
@@ -78,6 +102,13 @@ class EpisodeRunner:
             self.batch.update(post_transition_data, ts=self.t)
 
             self.t += 1
+
+        # Check survive task is selected
+        if self.args.task == "survive":
+            reward_survive = reward_task_survive(self)
+            episode_return, reward_ex, reward_survive = reward_scalarization(self,reward,reward_survive)
+            task_reward += reward_survive
+            extrinsic_reward += reward_ex
 
         last_data = {
             "state": [self.env.get_state()],
@@ -96,6 +127,11 @@ class EpisodeRunner:
         cur_stats.update({k: cur_stats.get(k, 0) + env_info.get(k, 0) for k in set(cur_stats) | set(env_info)})
         cur_stats["n_episodes"] = 1 + cur_stats.get("n_episodes", 0)
         cur_stats["ep_length"] = self.t + cur_stats.get("ep_length", 0)
+
+        # Add task and extrinsic rewards to metrics
+        if self.args.task != '':
+            cur_stats['reward_ext'] = extrinsic_reward
+            cur_stats['reward_' + self.args.task] = task_reward
 
         if not test_mode:
             self.t_env += self.t
@@ -119,5 +155,9 @@ class EpisodeRunner:
 
         for k, v in stats.items():
             if k != "n_episodes":
-                self.logger.log_stat(prefix + k + "_mean" , v/stats["n_episodes"], self.t_env)
+                if 'reward' in k:
+                    self.logger.log_stat(prefix + k + "_mean", np.mean(v), self.t_env)
+                    self.logger.log_stat(prefix + k + "_std", np.std(v), self.t_env)
+                else:
+                    self.logger.log_stat(prefix + k + "_mean" , v/stats["n_episodes"], self.t_env)
         stats.clear()

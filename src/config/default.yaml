@@ -45,3 +45,24 @@ obs_last_action: True # Include the agent's last action (one_hot) in the observa
 repeat_id: 1
 label: "default_label"
 hypergroup: null
+
+# --- Multi-Objetive parameters ---
+task: 'objetive'
+
+# Task: Reach Objetive
+agent_task: 1936 # Agent that must reach the objetive
+eps_objetive: 3 # Distance to consider that the agent have reached the objetive
+goal_gamma: 1 # Parameter or weight of the continous reward
+reward_reach: 2 # Reward for reach the objetive
+# Task: Kill an Specific enemy
+enemy_target: 51 # Enemy to kill
+reward_kill_target: 4 # Additional reward for kill the enemy
+reward_hit_target: 4 # Additional reward for hit the enemy
+# Task: Specific agent must survive
+agent_survive: 1936 # Agent that must survive
+reward_task_survive: 1 # Reward for the survival
+
+scalarization_method: 'lineal' # Type of reward scalarization
+weight1: 1
+weight2: 10
+
