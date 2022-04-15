@@ -4,7 +4,12 @@ from components.episode_buffer import EpisodeBatch
 from multiprocessing import Pipe, Process
 import numpy as np
 import torch as th
+import sys
 
+# Get the multitask functions
+sys.path.insert(0,'/home/aroman/TFM/Código/Proyecto_TFM/Proyecto_TFM/src/Multi_task')
+
+from rewards_multitask import reward_task_objetive, reward_task_survive, reward_task_kill, reward_scalarization
 
 # Based (very) heavily on SubprocVecEnv from OpenAI Baselines
 # https://github.com/openai/baselines/blob/master/baselines/common/vec_env/subproc_vec_env.py
@@ -18,11 +23,12 @@ class ParallelRunner:
         # Make subprocesses for the envs
         self.parent_conns, self.worker_conns = zip(*[Pipe() for _ in range(self.batch_size)])
         env_fn = env_REGISTRY[self.args.env]
+        self.env = env_fn
         env_args = [self.args.env_args.copy() for _ in range(self.batch_size)]
         for i in range(self.batch_size):
             env_args[i]["seed"] += i
 
-        self.ps = [Process(target=env_worker, args=(worker_conn, CloudpickleWrapper(partial(env_fn, **env_arg))))
+        self.ps = [Process(target=env_worker, args=(worker_conn, CloudpickleWrapper(partial(env_fn, **env_arg)),args))
                             for env_arg, worker_conn in zip(env_args, self.worker_conns)]
 
         for p in self.ps:
@@ -140,6 +146,7 @@ class ParallelRunner:
             for idx, parent_conn in enumerate(self.parent_conns):
                 if not terminated[idx]:
                     data = parent_conn.recv()
+
                     # Remaining data for this current timestep
                     post_transition_data["reward"].append((data["reward"],))
 
@@ -214,7 +221,7 @@ class ParallelRunner:
         stats.clear()
 
 
-def env_worker(remote, env_fn):
+def env_worker(remote, env_fn, args):
     # Make environment
     env = env_fn.x()
     while True:
@@ -222,7 +229,20 @@ def env_worker(remote, env_fn):
         if cmd == "step":
             actions = data
             # Take a step in the environment
-            reward, terminated, env_info = env.step(actions)
+            reward, terminated, env_info = env.step(actions)    
+            # Check if the multi-objetive option is set and compute 
+            # the aditional reward and
+            # the total reward scalarization
+            obj = create_obj(env,args)
+            if obj.args.task == 'objetive':
+                reward_objetive,terminated_task = reward_task_objetive(obj,terminated)
+                if terminated_task:
+                    task_reach = 1
+                    terminated = terminated_task
+                reward = reward_scalarization(obj,reward,reward_objetive)
+            elif obj.args.task == 'kill':
+                reward_kill = reward_task_kill(obj)
+                reward = reward_scalarization(obj,reward,reward_kill)     
             # Return the observations, avail_actions and state to make the next action
             state = env.get_state()
             avail_actions = env.get_avail_actions()
@@ -269,3 +289,7 @@ class CloudpickleWrapper():
         import pickle
         self.x = pickle.loads(ob)
 
+class create_obj():
+    def __init__(self,x,y):
+        self.env = x
+        self.args = y
