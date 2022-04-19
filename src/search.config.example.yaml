@@ -33,8 +33,12 @@ grid-search:
 
   save_model:
     - true
-    
+  
+  task: 
+    - 'objetive'
+
 grid-search-groups:
   env0:
     - "--env-config": "sc2"
-    - env_args.map_name: "2s3z"
+    - env_args.map_name: 
+      - "Multi_task_6m2M" 

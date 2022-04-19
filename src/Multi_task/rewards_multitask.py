@@ -5,7 +5,7 @@ def reward_task_objetive(obj,terminated_task):
     # Initialization
     reward_objetive = 0
 
-    x_agent_init = 16.5
+    x_agent_init = 15.5
     y_agent_init =  3.0
 
     # Get target point
@@ -32,7 +32,7 @@ def reward_task_objetive(obj,terminated_task):
             else:
                 reward_objetive = obj.args.goal_gamma*(1-dist/dist_init)
 
-    max_reward = 2*obj.args.reward_reach*obj.env.episode_limit
+    max_reward = obj.args.reward_reach*obj.env.episode_limit
     reward_objetive /= max_reward / obj.env.reward_scale_rate
 
     return reward_objetive, terminated_task
@@ -42,6 +42,8 @@ def reward_task_kill(obj):
     #Initialization
     reward_target = 0
     number_targets = 0
+    delta_enemy = 0
+    delta_deaths = 0
     # Target enemy damage and killing
     for e_id, e_unit in obj.env.enemies.items():
         if e_unit.unit_type == obj.args.enemy_target:
@@ -56,10 +58,9 @@ def reward_task_kill(obj):
                     delta_deaths += (obj.env.reward_death_value*obj.args.reward_kill_target)
                     delta_enemy += (prev_health*obj.args.reward_hit_target)
                 else:
-                    delta_enemy += prev_health - e_unit.health - e_unit.shield
-                    delta_enemy *= delta_enemy*obj.args.reward_hit_target
+                    delta_enemy += (prev_health - e_unit.health - e_unit.shield) * obj.args.reward_hit_target
 
-    reward_target = abs(delta_enemy + delta_deaths)
+    reward_target += abs(delta_enemy + delta_deaths)
     
     # Set the max reward 
     max_reward = (
@@ -85,14 +86,11 @@ def reward_task_survive(obj):
             if agent.health / agent.health_max > 0:
                 #is alived
                 reward_survive += obj.args.reward_task_survive
-    
-    # Check enemies that has survided
-    dicc_state = obj.env.get_state_dict()
-
-    enemies = dicc_state['enemies']
-    n_enemies_alived = sum(enemies[:,0])
-
-    reward_survive -= n_enemies_alived*(obj.args.reward_task_survive/obj.env.n_enemies)
+                # Check enemies that has survided
+                dicc_state = obj.env.get_state_dict()
+                enemies = dicc_state['enemies']
+                n_enemies_alived = sum(enemies[:,0])
+                reward_survive -= n_enemies_alived*(obj.args.reward_task_survive/obj.env.n_enemies)
 
     max_reward = obj.args.reward_task_survive
 

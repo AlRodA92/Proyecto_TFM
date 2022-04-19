@@ -54,6 +54,7 @@ class EpisodeRunner:
     def run(self, test_mode=False):
         self.reset()
 
+        terminated_total = False
         terminated = False
         terminated_task = False
         episode_return = 0
@@ -61,7 +62,7 @@ class EpisodeRunner:
         extrinsic_reward = 0
         self.mac.init_hidden(batch_size=self.batch_size)
 
-        while not terminated:
+        while not terminated_total:
 
             pre_transition_data = {
                 "state": [self.env.get_state()],
@@ -80,8 +81,10 @@ class EpisodeRunner:
             # Check if the multi-objetive option is set and compute the aditional reward and
             # the total reward scalarization
             if self.args.task == 'objetive':
-                reward_objetive,terminated_task = reward_task_objetive(self,terminated)
-                terminated = terminated_task
+                if not terminated_task:
+                    reward_objetive,terminated_task = reward_task_objetive(self,terminated)
+                if all([terminated,terminated_task]):
+                    terminated_total = True
                 reward, reward_ex, reward_objetive = reward_scalarization(self,reward,reward_objetive)
                 task_reward += reward_objetive
                 extrinsic_reward += reward_ex
@@ -96,7 +99,7 @@ class EpisodeRunner:
             post_transition_data = {
                 "actions": actions,
                 "reward": [(reward,)],
-                "terminated": [(terminated != env_info.get("episode_limit", False),)],
+                "terminated": [(terminated_total != env_info.get("episode_limit", False),)],
             }
 
             self.batch.update(post_transition_data, ts=self.t)
