@@ -54,15 +54,16 @@ class EpisodeRunner:
     def run(self, test_mode=False):
         self.reset()
 
-        terminated_total = False
         terminated = False
         terminated_task = False
         episode_return = 0
         task_reward = 0
-        extrinsic_reward = 0
+        smac_reward = 0
+        task_reach = 0
+        dist_prev = 0
         self.mac.init_hidden(batch_size=self.batch_size)
 
-        while not terminated_total:
+        while not terminated:
 
             pre_transition_data = {
                 "state": [self.env.get_state()],
@@ -75,31 +76,31 @@ class EpisodeRunner:
             # Pass the entire batch of experiences up till now to the agents
             # Receive the actions for each agent at this timestep in a batch of size 1
             actions = self.mac.select_actions(self.batch, t_ep=self.t, t_env=self.t_env, test_mode=test_mode)
-
             reward, terminated, env_info = self.env.step(actions[0])
-
+            
             # Check if the multi-objetive option is set and compute the aditional reward and
             # the total reward scalarization
             if self.args.task == 'objetive':
-                if not terminated_task:
-                    reward_objetive,terminated_task = reward_task_objetive(self,terminated)
-                if all([terminated,terminated_task]):
-                    terminated_total = True
-                reward, reward_ex, reward_objetive = reward_scalarization(self,reward,reward_objetive)
+                reward_objetive,terminated_task,dist = reward_task_objetive(self,task_reward,terminated,dist_prev)
+                if terminated_task:
+                    task_reach = 1
+                terminated = terminated_task
+                reward, smac_reward, reward_objetive = reward_scalarization(self,reward,reward_objetive)
                 task_reward += reward_objetive
-                extrinsic_reward += reward_ex
+                smac_reward += smac_reward
+                dist_prev = dist
             elif self.args.task == 'kill':
-                reward_kill = reward_task_kill(self)
-                reward, reward_ex, reward_kill = reward_scalarization(self,reward,reward_kill)
+                reward_kill, number_targets, deaths = reward_task_kill(self)
+                reward, smac_reward, reward_kill = reward_scalarization(self,reward,reward_kill)
                 task_reward += reward_kill
-                extrinsic_reward += reward_ex
+                smac_reward += smac_reward
                 
             episode_return += reward
     
             post_transition_data = {
                 "actions": actions,
                 "reward": [(reward,)],
-                "terminated": [(terminated_total != env_info.get("episode_limit", False),)],
+                "terminated": [(terminated != env_info.get("episode_limit", False),)],
             }
 
             self.batch.update(post_transition_data, ts=self.t)
@@ -108,10 +109,10 @@ class EpisodeRunner:
 
         # Check survive task is selected
         if self.args.task == "survive":
-            reward_survive = reward_task_survive(self)
-            episode_return, reward_ex, reward_survive = reward_scalarization(self,reward,reward_survive)
+            reward_survive, number_targets, survives = reward_task_survive(self)
+            episode_return, smac_reward, reward_survive = reward_scalarization(self,reward,reward_survive)
             task_reward += reward_survive
-            extrinsic_reward += reward_ex
+            smac_reward += smac_reward
 
         last_data = {
             "state": [self.env.get_state()],
@@ -132,16 +133,30 @@ class EpisodeRunner:
         cur_stats["ep_length"] = self.t + cur_stats.get("ep_length", 0)
 
         # Add task and extrinsic rewards to metrics
-        if self.args.task != '':
-            cur_stats['reward_ext'] = extrinsic_reward
-            cur_stats['reward_' + self.args.task] = task_reward
-
+        if self.args.task == 'objetive':
+            cur_stats['reward_smac'] = smac_reward
+            cur_stats['reward_objetive'] = task_reward
+            cur_stats['dist'] = dist
+            cur_stats['objetive_reach'] = task_reach
+        elif self.args.task == 'kill':
+            cur_stats['reward_smac'] = smac_reward
+            cur_stats['reward_kill'] = task_reward
+            cur_stats['number_targets'] = number_targets
+            cur_stats['death'] = deaths
+        elif self.args.task == 'survive':
+            cur_stats['reward_smac'] = smac_reward
+            cur_stats['reward_kill'] = task_reward
+            cur_stats['number_targets'] = number_targets
+            cur_stats['survive'] = survives
+            
         if not test_mode:
             self.t_env += self.t
 
         cur_returns.append(episode_return)
 
-        if test_mode and (len(self.test_returns) == self.args.test_nepisode):
+        if self.args.test_eval:
+            self._log(cur_returns, cur_stats, log_prefix)
+        elif test_mode and (len(self.test_returns) == self.args.test_nepisode):
             self._log(cur_returns, cur_stats, log_prefix)
         elif self.t_env - self.log_train_stats_t >= self.args.runner_log_interval:
             self._log(cur_returns, cur_stats, log_prefix)
