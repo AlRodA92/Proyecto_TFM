@@ -9,7 +9,7 @@ import sys
 # Get the multitask functions
 sys.path.insert(0,'/home/aroman/TFM/Código/Proyecto_TFM/Proyecto_TFM/src/Multi_task')
 
-from rewards_multitask import reward_task_objetive, reward_task_survive, reward_task_kill, reward_scalarization
+from rewards_multitask import reward_task_objetive_old, reward_task_survive, reward_task_kill, reward_scalarization
 
 # Based (very) heavily on SubprocVecEnv from OpenAI Baselines
 # https://github.com/openai/baselines/blob/master/baselines/common/vec_env/subproc_vec_env.py
@@ -23,7 +23,6 @@ class ParallelRunner:
         # Make subprocesses for the envs
         self.parent_conns, self.worker_conns = zip(*[Pipe() for _ in range(self.batch_size)])
         env_fn = env_REGISTRY[self.args.env]
-        self.env = env_fn
         env_args = [self.args.env_args.copy() for _ in range(self.batch_size)]
         for i in range(self.batch_size):
             env_args[i]["seed"] += i
@@ -78,7 +77,7 @@ class ParallelRunner:
         pre_transition_data = {
             "state": [],
             "avail_actions": [],
-            "obs": []
+            "obs": [],
         }
         # Get the obs, state and avail_actions back
         for parent_conn in self.parent_conns:
@@ -97,6 +96,8 @@ class ParallelRunner:
 
         all_terminated = False
         episode_returns = [0 for _ in range(self.batch_size)]
+        task_returns = [0 for _ in range(self.batch_size)]
+        smac_returns = [0 for _ in range(self.batch_size)]
         episode_lengths = [0 for _ in range(self.batch_size)]
         self.mac.init_hidden(batch_size=self.batch_size)
         terminated = [False for _ in range(self.batch_size)]
@@ -149,6 +150,12 @@ class ParallelRunner:
 
                     # Remaining data for this current timestep
                     post_transition_data["reward"].append((data["reward"],))
+                    if self.args.task == "objetive":
+                        task_returns[idx] += data["reward_objetive"]
+                        smac_returns[idx] += data["smac_reward"]
+                    elif self.args.task == "kill": 
+                        task_returns[idx] += data["reward_kill"]
+                        smac_returns[idx] += data["smac_reward"]
 
                     episode_returns[idx] += data["reward"]
                     episode_lengths[idx] += 1
@@ -160,6 +167,11 @@ class ParallelRunner:
                         final_env_infos.append(data["info"])
                     if data["terminated"] and not data["info"].get("episode_limit", False):
                         env_terminated = True
+                        
+                        # Check if survive task is selected
+                        if self.args.task == 'survive':
+                            pass
+
                     terminated[idx] = data["terminated"]
                     post_transition_data["terminated"].append((env_terminated,))
 
@@ -197,7 +209,9 @@ class ParallelRunner:
         cur_stats["n_episodes"] = self.batch_size + cur_stats.get("n_episodes", 0)
         cur_stats["ep_length"] = sum(episode_lengths) + cur_stats.get("ep_length", 0)
 
-        cur_returns.extend(episode_returns)
+        cur_returns.append(episode_returns)
+        cur_returns.append(smac_returns)
+        # cur_returns.append(task_returns)
 
         n_test_runs = max(1, self.args.test_nepisode // self.batch_size) * self.batch_size
         if test_mode and (len(self.test_returns) == n_test_runs):
@@ -211,13 +225,20 @@ class ParallelRunner:
         return self.batch
 
     def _log(self, returns, stats, prefix):
-        self.logger.log_stat(prefix + "return_mean", np.mean(returns), self.t_env)
-        self.logger.log_stat(prefix + "return_std", np.std(returns), self.t_env)
+        returns_name = ["return_mean","smac_mean","task_mean"]
+        std_name = ["return_std","smac_std","task_std"]
+        for idx,return_type in enumerate(returns):
+            self.logger.log_stat(prefix + returns_name[idx], np.mean(return_type), self.t_env)
+            self.logger.log_stat(prefix + std_name[idx], np.std(return_type), self.t_env)
         returns.clear()
 
         for k, v in stats.items():
             if k != "n_episodes":
-                self.logger.log_stat(prefix + k + "_mean" , v/stats["n_episodes"], self.t_env)
+                if 'reward' in k:
+                    self.logger.log_stat(prefix + k + "_mean", np.mean(v), self.t_env)
+                    self.logger.log_stat(prefix + k + "_std", np.std(v), self.t_env)
+                else:
+                    self.logger.log_stat(prefix + k + "_mean" , v/stats["n_episodes"], self.t_env)
         stats.clear()
 
 
@@ -229,34 +250,53 @@ def env_worker(remote, env_fn, args):
         if cmd == "step":
             actions = data
             # Take a step in the environment
-            reward, terminated, env_info = env.step(actions)    
+            reward, terminated, env_info = env.step(actions)
             # Check if the multi-objetive option is set and compute 
             # the aditional reward and
             # the total reward scalarization
             obj = create_obj(env,args)
             if obj.args.task == 'objetive':
-                reward_objetive,terminated_task = reward_task_objetive(obj,terminated)
+                reward_objetive,terminated_task = reward_task_objetive_old(obj,terminated)
                 if terminated_task:
-                    task_reach = 1
                     terminated = terminated_task
-                reward = reward_scalarization(obj,reward,reward_objetive)
+                reward, smac_reward, reward_objetive = reward_scalarization(obj,reward,reward_objetive)
+                # Return the observations, avail_actions and state to make the next action
+                state = env.get_state()
+                avail_actions = env.get_avail_actions()
+                obs = env.get_obs()
+                remote.send({
+                    # Data for the next timestep needed to pick an action
+                    "state": state,
+                    "avail_actions": avail_actions,
+                    "obs": obs,
+                    # Rest of the data for the current timestep
+                    "reward": reward,
+                    "terminated": terminated,
+                    "info": env_info,
+                    # Multitasking info
+                    "smac_reward": smac_reward,
+                    "reward_objetive": reward_objetive
+                })
             elif obj.args.task == 'kill':
-                reward_kill = reward_task_kill(obj)
-                reward = reward_scalarization(obj,reward,reward_kill)     
-            # Return the observations, avail_actions and state to make the next action
-            state = env.get_state()
-            avail_actions = env.get_avail_actions()
-            obs = env.get_obs()
-            remote.send({
-                # Data for the next timestep needed to pick an action
-                "state": state,
-                "avail_actions": avail_actions,
-                "obs": obs,
-                # Rest of the data for the current timestep
-                "reward": reward,
-                "terminated": terminated,
-                "info": env_info
-            })
+                reward_kill,number_targets, death = reward_task_kill(obj)
+                reward, smac_reward, reward_kill = reward_scalarization(obj,reward,reward_kill)     
+                # Return the observations, avail_actions and state to make the next action
+                state = env.get_state()
+                avail_actions = env.get_avail_actions()
+                obs = env.get_obs()
+                remote.send({
+                    # Data for the next timestep needed to pick an action
+                    "state": state,
+                    "avail_actions": avail_actions,
+                    "obs": obs,
+                    # Rest of the data for the current timestep
+                    "reward": reward,
+                    "terminated": terminated,
+                    "info": env_info,
+                    # Multitasking info
+                    "smac_reward": smac_reward,
+                    "reward_kill": reward_kill
+                })
         elif cmd == "reset":
             env.reset()
             remote.send({
@@ -272,6 +312,18 @@ def env_worker(remote, env_fn, args):
             remote.send(env.get_env_info())
         elif cmd == "get_stats":
             remote.send(env.get_stats())
+        elif cmd == "get_survive_reward":
+            cmd, data = remote.recv()
+            reward = data
+            reward_survive, number_targets, survives = reward_task_survive(obj)
+            reward, reward1, reward2 = reward_scalarization(obj,reward,reward_survive)
+            remote.send({
+                # Data for the next timestep needed to pick an action
+                "reward": reward,
+                # Multitasking info
+                "number_targets": number_targets,
+                "survives": survives
+            })
         else:
             raise NotImplementedError
 
