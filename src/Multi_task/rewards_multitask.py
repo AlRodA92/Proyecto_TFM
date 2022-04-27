@@ -1,4 +1,5 @@
 import math
+import numpy as np
 
 def reward_task_objetive(obj,task_reward,terminated_task,dist_prev):
 
@@ -90,20 +91,27 @@ def reward_task_kill(obj):
     return reward_target, number_targets, death
 
 
-def reward_task_survive(obj):
+def reward_task_survive(obj,terminated):
 
     #Initialization
     reward_survive = 0
     number_targets = 0
     survives = 0
     survive = 0
+    deaths = 0
+    number_death = 0
     # Check if the agent has survived
     for agent_id in range(obj.env.n_agents):
         agent = obj.env.get_unit_by_id(agent_id)
         agent_task = check_unit_task(obj,agent)
         if agent_task:
             number_targets += 1
-            if agent.health / agent.health_max > 0:
+            if not terminated:
+                if agent.health == 0.0 and deaths<number_targets:
+                    number_death = np.count_nonzero(obj.death_tracker_ally)
+                    deaths += 1
+                    reward_survive -= number_death*(obj.args.reward_task_survive/obj.env.n_agents)
+            elif agent.health / agent.health_max > 0 and terminated:
                 #is alived
                 survives += 1
                 reward_survive += obj.args.reward_task_survive
@@ -113,7 +121,7 @@ def reward_task_survive(obj):
                     enemies = dicc_state['enemies']
                     n_enemies_alived = sum(enemies[:,0])
                     reward_survive -= n_enemies_alived*(obj.args.reward_task_survive/obj.env.n_enemies)
-
+                
     max_reward = obj.args.reward_task_survive
 
     reward_survive /= max_reward / obj.env.reward_scale_rate
