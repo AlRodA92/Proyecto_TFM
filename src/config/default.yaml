@@ -15,6 +15,7 @@ learner_log_interval: 2000 # Log training stats every {} timesteps
 t_max: 10000 # Stop running after this many timesteps
 use_cuda: True # Use gpu by default unless it isn't available
 buffer_cpu_only: True # If true we won't keep all of the replay buffer in vram
+test_eval: False
 
 # --- Logging options ---
 use_tensorboard: False # Log results to tensorboard
@@ -48,21 +49,23 @@ hypergroup: null
 
 # --- Multi-Objetive parameters ---
 task: 'objetive'
-
+unit_task: 'Marauder'
 # Task: Reach Objetive
-agent_task: 1936 # Agent that must reach the objetive
+agent_task: 1936 # Agent that must reach the objetive 1936:Ghost, 1937: Marauder, 1938: Marine
 eps_objetive: 3 # Distance to consider that the agent have reached the objetive
 goal_gamma: 1 # Parameter or weight of the continous reward
 reward_reach: 2 # Reward for reach the objetive
+obj_penal: 1
 # Task: Kill an Specific enemy
-enemy_target: 51 # Enemy to kill
-reward_kill_target: 2 # Additional reward for kill the enemy
-reward_hit_target: 2 # Additional reward for hit the enemy
+enemy_target: 51 # Enemy to kill 48: Marine, 50: Ghost, 51: Marauder
+reward_kill_target: 4 # Additional reward for kill the enemy
+reward_hit_target: 6 # Additional reward for hit the enemy
 # Task: Specific agent must survive
 agent_survive: 1936 # Agent that must survive
-reward_task_survive: 20 # Reward for the survival
+reward_task_survive: 40 # Reward for the survival
+penal_survive: True
 
 scalarization_method: 'lineal' # Type of reward scalarization
 weight1: 1
-weight2: 2
+weight2: 1
 
