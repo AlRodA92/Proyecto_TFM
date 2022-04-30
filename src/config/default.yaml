@@ -48,7 +48,7 @@ label: "default_label"
 hypergroup: null
 
 # --- Multi-Objetive parameters ---
-task: 'survive'
+task: 'objetive'
 unit_task: 'SCV'
 # Task: Reach Objetive
 eps_objetive: 3 # Distance to consider that the agent have reached the objetive

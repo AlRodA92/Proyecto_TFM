@@ -2,7 +2,7 @@ import math
 import numpy as np
 from torch import detach
 
-def reward_task_objetive(obj,task_reward,terminated_task,dist_prev,time):
+def reward_task_objetive(obj,task_reward,dist_prev,time):
 
     # Initialization
     reward_objetive = 0
@@ -12,11 +12,11 @@ def reward_task_objetive(obj,task_reward,terminated_task,dist_prev,time):
         x_agent_init = 15.5
         y_agent_init = 3.0
     elif obj.env.map_name == "Multi_task_6m1M1Gh1scv_vs_12m1M1Gh":
-        x_agent_init = 20.5
-        y_agent_init = 4.0       
+        x_agent_init = 15.5
+        y_agent_init = 3.0     
     elif obj.env.map_name == "Multi_task_6m1M1Gh1scv":
-        x_agent_init = 30.5
-        y_agent_init = 5.0   
+        x_agent_init = 15.5
+        y_agent_init = 3.0 
 
     # Get target point
     pos = obj.env.get_target_point(0)
@@ -27,7 +27,7 @@ def reward_task_objetive(obj,task_reward,terminated_task,dist_prev,time):
     dist_init = math.hypot(x_target-x_agent_init, y_target-y_agent_init)
 
     # Set the distance threshold 
-    if time == 0 or dist_prev>dist_init:
+    if time == 0 or dist_prev>dist_init or dist_prev == 0:
         epsilon = dist_init
     else:
         epsilon = dist_prev
@@ -44,16 +44,16 @@ def reward_task_objetive(obj,task_reward,terminated_task,dist_prev,time):
             # Check if the agent get to the objetive
             if dist < obj.args.eps_objetive:
                 reward_objetive = obj.args.reward_reach*obj.env.episode_limit - obj.args.obj_penal*task_reward
-                terminated_task = True
             elif dist < epsilon:
                 reward_objetive = obj.args.goal_gamma*(1-dist/dist_init)
+                dist_prev = dist
             else:  
                 reward_objetive = 0
-
+                
     max_reward = number_targets*obj.args.reward_reach*obj.env.episode_limit
     reward_objetive /= max_reward / obj.env.reward_scale_rate
 
-    return reward_objetive, terminated_task, dist
+    return reward_objetive, dist, dist_prev
 
 def reward_task_kill(obj):
 
