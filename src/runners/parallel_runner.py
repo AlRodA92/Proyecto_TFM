@@ -173,8 +173,16 @@ class ParallelRunner:
                         number_kill[idx] = data["number_kill"]
                         death[idx] = data["death"]
                     elif self.args.task == "survive":
-                        number_death[idx] = data["number_death"]
-                        episode_returns[idx] += data["reward"]
+                        if not data["terminated"]:
+                            number_death[idx] = data["number_death"]
+                            smac_returns[idx] += data["reward"]
+                            episode_returns[idx] += data["reward"]
+                        else:
+                            task_returns[idx] += data["task_reward"]
+                            smac_returns[idx] += data["smac_reward"]
+                            episode_returns[idx] += data["reward"]
+                            number_death[idx] = data["number_death"]
+                            survive[idx] = data["survive"]
 
                     episode_lengths[idx] += 1
                     if not test_mode:
@@ -336,43 +344,54 @@ def env_worker(remote, env_fn, args):
                     "death": death,
                     "number_kill": number_kill
                 })
-            elif obj.args.task == "survive" and not terminated:
+            elif obj.args.task == "survive":
                 actions, number_death = data
                 # Take a step in the environment
                 reward, terminated, env_info = env.step(actions)
                 # Check if the multi-objetive option is set and compute 
                 # the aditional reward and
                 # the total reward scalarization
-                # if not terminated:
-                number_death = check_ally_death(obj,number_death)
-                state = env.get_state()
-                avail_actions = env.get_avail_actions()
-                obs = env.get_obs()
-                remote.send({
-                    # Data for the next timestep needed to pick an action
-                    "state": state,
-                    "avail_actions": avail_actions,
-                    "obs": obs,
-                    # Rest of the data for the current timestep
-                    "reward": reward,
-                    "terminated": terminated,
-                    "info": env_info,
-                    # Multitasking info
-                    "number_death": number_death
-                })
-                # elif terminated:
-                #     reward_survive, survive = reward_task_survive(obj,number_death)
-                #     rewards = reward_scalarization(obj,reward,reward_survive)
-                #     reward = rewards[0]
-                #     smac_reward = rewards[1]
-                #     task_reward = rewards[2]
-                #     remote.send({
-                #         # Multitasking info
-                #         "reward": reward,
-                #         "smac_reward": smac_reward,
-                #         "task_reward": task_reward,
-                #         "survive": survive
-                #     })
+                if not terminated:
+                    number_death = check_ally_death(obj,number_death)
+                    state = env.get_state()
+                    avail_actions = env.get_avail_actions()
+                    obs = env.get_obs()
+                    remote.send({
+                        # Data for the next timestep needed to pick an action
+                        "state": state,
+                        "avail_actions": avail_actions,
+                        "obs": obs,
+                        # Rest of the data for the current timestep
+                        "reward": reward,
+                        "terminated": terminated,
+                        "info": env_info,
+                        # Multitasking info
+                        "number_death": number_death
+                    })
+                elif terminated:
+                    reward_survive, survive = reward_task_survive(obj,number_death)
+                    rewards = reward_scalarization(obj,reward,reward_survive)
+                    reward = rewards[0]
+                    smac_reward = rewards[1]
+                    task_reward = rewards[2]
+                    state = env.get_state()
+                    avail_actions = env.get_avail_actions()
+                    obs = env.get_obs()
+                    remote.send({
+                        # Data for the next timestep needed to pick an action
+                        "state": state,
+                        "avail_actions": avail_actions,
+                        "obs": obs,
+                        # Rest of the data for the current timestep
+                        "reward": reward,
+                        "terminated": terminated,
+                        "info": env_info,
+                        # Multitasking info
+                        "smac_reward": smac_reward,
+                        "task_reward": task_reward,
+                        "survive": survive,
+                        "number_death": number_death
+                    })
             else:
                 state = env.get_state()
                 avail_actions = env.get_avail_actions()

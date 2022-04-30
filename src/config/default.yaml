@@ -60,7 +60,8 @@ reward_kill_target: 4 # Additional reward for kill the enemy
 reward_hit_target: 6 # Additional reward for hit the enemy
 # Task: Specific agent must survive
 reward_task_survive: 40 # Reward for the survival
-penal_survive: True
+survive_number_death: 1
+penal_survive: 1
 
 scalarization_method: 'lineal' # Type of reward scalarization
 weight1: 1

@@ -110,7 +110,7 @@ def reward_task_survive(obj,number_death):
     survive = 0
     # Check if the agent has survived
     if number_death != 0:
-        reward_survive -= (obj.env.n_agents-number_death)*(obj.args.reward_task_survive/obj.env.n_agents)
+        reward_survive -= obj.args.survive_number_death*(obj.env.n_agents-number_death)*(obj.args.reward_task_survive/obj.env.n_agents)
     else:
         for agent_id in range(obj.env.n_agents):
             agent = obj.env.get_unit_by_id(agent_id)
@@ -121,12 +121,11 @@ def reward_task_survive(obj,number_death):
                     #is alived
                     survives += 1
                     reward_survive += obj.args.reward_task_survive
-                    if obj.args.penal_survive:
                     # Check enemies that has survided
-                        dicc_state = obj.env.get_state_dict()
-                        enemies = dicc_state['enemies']
-                        n_enemies_alived = sum(enemies[:,0])
-                        reward_survive -= n_enemies_alived*(obj.args.reward_task_survive/obj.env.n_enemies)
+                    dicc_state = obj.env.get_state_dict()
+                    enemies = dicc_state['enemies']
+                    n_enemies_alived = sum(enemies[:,0])
+                    reward_survive -= obj.args.penal_survive*n_enemies_alived*(obj.args.reward_task_survive/obj.env.n_enemies)
                 
     max_reward = obj.args.reward_task_survive
 
