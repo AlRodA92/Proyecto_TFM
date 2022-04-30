@@ -8,7 +8,7 @@ import sys
 # Get the multitask functions
 sys.path.insert(0,'/home/aroman/TFM/Código/Proyecto_TFM/Proyecto_TFM/src/Multi_task')
 
-from rewards_multitask import reward_task_objetive, reward_task_survive, reward_task_kill, reward_scalarization
+from rewards_multitask import reward_task_objetive, reward_task_survive, reward_task_kill, reward_scalarization, check_ally_death
 
 class EpisodeRunner:
 
@@ -24,8 +24,13 @@ class EpisodeRunner:
 
         self.t_env = 0
 
-        self.train_returns = []
-        self.test_returns = []
+        if self.args.task != 'None':
+            self.train_returns = [[] for i in range(3)]
+            self.test_returns = [[] for i in range(3)]
+        else:
+            self.train_returns = []
+            self.test_returns = []
+
         self.train_stats = {}
         self.test_stats = {}
 
@@ -61,8 +66,9 @@ class EpisodeRunner:
         smac_reward = 0
         task_reach = 0
         dist_prev = 0
+        number_death = 0
         self.mac.init_hidden(batch_size=self.batch_size)
-
+        
         while not terminated:
 
             pre_transition_data = {
@@ -77,26 +83,30 @@ class EpisodeRunner:
             # Receive the actions for each agent at this timestep in a batch of size 1
             actions = self.mac.select_actions(self.batch, t_ep=self.t, t_env=self.t_env, test_mode=test_mode)
             reward, terminated, env_info = self.env.step(actions[0])
-            
+
             # Check if the multi-objetive option is set and compute the aditional reward and
             # the total reward scalarization
             if self.args.task == 'objetive':
-                reward_objetive,terminated_task,dist = reward_task_objetive(self,task_reward,terminated,dist_prev)
+                time = self.t
+                reward_objetive,terminated_task,dist = reward_task_objetive(self,task_reward,terminated,dist_prev,time)
                 if terminated_task:
                     task_reach = 1
                 terminated = terminated_task
-                reward, smac_reward, reward_objetive = reward_scalarization(self,reward,reward_objetive)
-                task_reward += reward_objetive
-                smac_reward += smac_reward
+                rewards = reward_scalarization(self,reward,reward_objetive)
+                episode_return += rewards[0]
+                smac_reward += rewards[1]
+                task_reward += rewards[2]
                 dist_prev = dist
             elif self.args.task == 'kill':
-                reward_kill, number_targets, deaths = reward_task_kill(self)
-                reward, smac_reward, reward_kill = reward_scalarization(self,reward,reward_kill)
-                task_reward += reward_kill
-                smac_reward += smac_reward
-                
-            episode_return += reward
-    
+                reward_kill, death, number_kill = reward_task_kill(self)
+                rewards = reward_scalarization(self,reward,reward_kill)
+                episode_return += rewards[0]
+                smac_reward += rewards[1]
+                task_reward += rewards[2]
+            # Check survive task is selected
+            elif self.args.task == "survive":
+                number_death = check_ally_death(self,number_death)
+
             post_transition_data = {
                 "actions": actions,
                 "reward": [(reward,)],
@@ -109,10 +119,11 @@ class EpisodeRunner:
 
         # Check survive task is selected
         if self.args.task == "survive":
-            reward_survive, number_targets, survives = reward_task_survive(self)
-            episode_return, smac_reward, reward_survive = reward_scalarization(self,reward,reward_survive)
-            task_reward += reward_survive
-            smac_reward += smac_reward
+            reward_survive, survive = reward_task_survive(self,number_death)
+            rewards = reward_scalarization(self,reward,reward_survive)
+            episode_return += rewards[0]
+            smac_reward += rewards[1]
+            task_reward += rewards[2]
 
         last_data = {
             "state": [self.env.get_state()],
@@ -134,25 +145,21 @@ class EpisodeRunner:
 
         # Add task and extrinsic rewards to metrics
         if self.args.task == 'objetive':
-            cur_stats['reward_smac'] = smac_reward
-            cur_stats['reward_objetive'] = task_reward
             cur_stats['dist'] = dist
             cur_stats['objetive_reach'] = task_reach
         elif self.args.task == 'kill':
-            cur_stats['reward_smac'] = smac_reward
-            cur_stats['reward_kill'] = task_reward
-            cur_stats['number_targets'] = number_targets
-            cur_stats['death'] = deaths
+            cur_stats['number_kill'] = number_kill
+            cur_stats['kill'] = death
         elif self.args.task == 'survive':
-            cur_stats['reward_smac'] = smac_reward
-            cur_stats['reward_kill'] = task_reward
-            cur_stats['number_targets'] = number_targets
-            cur_stats['survive'] = survives
+            cur_stats['survive'] = survive
+            cur_stats['number_death'] = number_death
             
         if not test_mode:
             self.t_env += self.t
 
-        cur_returns.append(episode_return)
+        cur_returns[0].append(episode_return)
+        cur_returns[1].append(smac_reward)
+        cur_returns[2].append(task_reward)
 
         if self.args.test_eval:
             self._log(cur_returns, cur_stats, log_prefix)
@@ -167,15 +174,13 @@ class EpisodeRunner:
         return self.batch
 
     def _log(self, returns, stats, prefix):
-        self.logger.log_stat(prefix + "return_mean", np.mean(returns), self.t_env)
-        self.logger.log_stat(prefix + "return_std", np.std(returns), self.t_env)
-        returns.clear()
+        rewards = ['_','_smac_','_'+self.args.task+'_']
+        for idx,return_type in enumerate(returns):
+            self.logger.log_stat(prefix + "return" + rewards[idx] + "mean", np.mean(return_type), self.t_env)
+            self.logger.log_stat(prefix + "return" + rewards[idx] + "std", np.std(return_type), self.t_env)
+            returns[idx].clear()
 
         for k, v in stats.items():
             if k != "n_episodes":
-                if 'reward' in k:
-                    self.logger.log_stat(prefix + k + "_mean", np.mean(v), self.t_env)
-                    self.logger.log_stat(prefix + k + "_std", np.std(v), self.t_env)
-                else:
-                    self.logger.log_stat(prefix + k + "_mean" , v/stats["n_episodes"], self.t_env)
+                self.logger.log_stat(prefix + k + "_mean" , v/stats["n_episodes"], self.t_env)
         stats.clear()

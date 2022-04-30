@@ -1,14 +1,22 @@
 import math
 import numpy as np
+from torch import detach
 
-def reward_task_objetive(obj,task_reward,terminated_task,dist_prev):
+def reward_task_objetive(obj,task_reward,terminated_task,dist_prev,time):
 
     # Initialization
     reward_objetive = 0
     number_targets = 0
-
-    x_agent_init = 15.5
-    y_agent_init = 3.0
+  
+    if obj.env.map_name == "Multi_task_6m1M1Gh1scv_vs_8m1M1Gh":
+        x_agent_init = 15.5
+        y_agent_init = 3.0
+    elif obj.env.map_name == "Multi_task_6m1M1Gh1scv_vs_12m1M1Gh":
+        x_agent_init = 20.5
+        y_agent_init = 4.0       
+    elif obj.env.map_name == "Multi_task_6m1M1Gh1scv":
+        x_agent_init = 30.5
+        y_agent_init = 5.0   
 
     # Get target point
     pos = obj.env.get_target_point(0)
@@ -19,7 +27,7 @@ def reward_task_objetive(obj,task_reward,terminated_task,dist_prev):
     dist_init = math.hypot(x_target-x_agent_init, y_target-y_agent_init)
 
     # Set the distance threshold 
-    if obj.t == 0 or dist_prev>dist_init:
+    if time == 0 or dist_prev>dist_init:
         epsilon = dist_init
     else:
         epsilon = dist_prev
@@ -53,9 +61,10 @@ def reward_task_kill(obj):
     reward_target = 0
     number_targets = 0
     deaths = 0
-    death = 0
+    kill = 0
     delta_enemy = 0
     delta_deaths = 0
+    number_kill = 0
     # Target enemy damage and killing
     for e_id, e_unit in obj.env.enemies.items():
         agent_task = check_unit_task(obj,e_unit)
@@ -71,6 +80,7 @@ def reward_task_kill(obj):
                     delta_deaths += (obj.env.reward_death_value*obj.args.reward_kill_target)
                     delta_enemy += (prev_health*obj.args.reward_hit_target)
                     deaths += 1
+                    number_kill = np.count_nonzero(obj.env.death_tracker_enemy)
                 else:
                     delta_enemy += (prev_health - e_unit.health - e_unit.shield) * obj.args.reward_hit_target
 
@@ -86,41 +96,37 @@ def reward_task_kill(obj):
     reward_target /= max_reward / obj.env.reward_scale_rate
 
     if deaths == number_targets:
-        death = 1
+        kill = 1
 
-    return reward_target, number_targets, death
+    return reward_target, kill, number_kill
 
 
-def reward_task_survive(obj,terminated):
+def reward_task_survive(obj,number_death):
 
     #Initialization
     reward_survive = 0
     number_targets = 0
     survives = 0
     survive = 0
-    deaths = 0
-    number_death = 0
     # Check if the agent has survived
-    for agent_id in range(obj.env.n_agents):
-        agent = obj.env.get_unit_by_id(agent_id)
-        agent_task = check_unit_task(obj,agent)
-        if agent_task:
-            number_targets += 1
-            if not terminated:
-                if agent.health == 0.0 and deaths<number_targets:
-                    number_death = np.count_nonzero(obj.death_tracker_ally)
-                    deaths += 1
-                    reward_survive -= number_death*(obj.args.reward_task_survive/obj.env.n_agents)
-            elif agent.health / agent.health_max > 0 and terminated:
-                #is alived
-                survives += 1
-                reward_survive += obj.args.reward_task_survive
-                if obj.args.penal_survive:
-                # Check enemies that has survided
-                    dicc_state = obj.env.get_state_dict()
-                    enemies = dicc_state['enemies']
-                    n_enemies_alived = sum(enemies[:,0])
-                    reward_survive -= n_enemies_alived*(obj.args.reward_task_survive/obj.env.n_enemies)
+    if number_death != 0:
+        reward_survive -= (obj.env.n_agents-number_death)*(obj.args.reward_task_survive/obj.env.n_agents)
+    else:
+        for agent_id in range(obj.env.n_agents):
+            agent = obj.env.get_unit_by_id(agent_id)
+            agent_task = check_unit_task(obj,agent)
+            if agent_task:
+                number_targets += 1
+                if agent.health / agent.health_max > 0:
+                    #is alived
+                    survives += 1
+                    reward_survive += obj.args.reward_task_survive
+                    if obj.args.penal_survive:
+                    # Check enemies that has survided
+                        dicc_state = obj.env.get_state_dict()
+                        enemies = dicc_state['enemies']
+                        n_enemies_alived = sum(enemies[:,0])
+                        reward_survive -= n_enemies_alived*(obj.args.reward_task_survive/obj.env.n_enemies)
                 
     max_reward = obj.args.reward_task_survive
 
@@ -128,10 +134,10 @@ def reward_task_survive(obj,terminated):
 
     if survives == number_targets:
         survive = 1
-    return reward_survive, number_targets, survive 
+    return reward_survive, survive 
 
 def reward_scalarization(obj,reward1,reward2):
-
+    
     if obj.args.scalarization_method == 'lineal':
         reward1 = obj.args.weight1*reward1
         reward2 = obj.args.weight2*reward2
@@ -139,9 +145,11 @@ def reward_scalarization(obj,reward1,reward2):
     elif obj.args.scalarization_method == 'potencial':
         reward1 = reward1**obj.args.weight1
         reward2 = reward2**obj.args.weight2
-        reward = reward1 + reward2
-    
-    return reward, reward1, reward2
+
+    smac_reward = reward1
+    task_reward = reward2
+
+    return reward, smac_reward, task_reward
 
 def check_unit_task(obj,unit):
 
@@ -158,6 +166,21 @@ def check_unit_task(obj,unit):
     
     return agent_task
 
+
+def check_ally_death(obj,number_death):
+    number_targets = 0
+    deaths = 0
+    if number_death == 0:
+        for agent_id in range(obj.env.n_agents):
+            agent = obj.env.get_unit_by_id(agent_id)
+            agent_task = check_unit_task(obj,agent)
+            if agent_task:
+                number_targets += 1
+                if agent.health == 0.0 and deaths<number_targets:
+                    number_death = np.count_nonzero(obj.env.death_tracker_ally)
+                    deaths += 1
+
+    return number_death
 
 def reward_task_survive_old(obj):
 
