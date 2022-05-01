@@ -101,39 +101,33 @@ def reward_task_kill(obj):
     return reward_target, kill, number_kill
 
 
-def reward_task_survive(obj,number_death):
+def reward_task_survive(obj,terminated,number_death):
 
     #Initialization
     reward_survive = 0
-    number_targets = 0
-    survives = 0
     survive = 0
     # Check if the agent has survived
-    if number_death != 0:
+
+    number_death = check_ally_death(obj,number_death)
+
+    if number_death != 0 and terminated:
         reward_survive -= obj.args.survive_number_death*(obj.env.n_agents-number_death)*(obj.args.reward_task_survive/obj.env.n_agents)
-    else:
-        for agent_id in range(obj.env.n_agents):
-            agent = obj.env.get_unit_by_id(agent_id)
-            agent_task = check_unit_task(obj,agent)
-            if agent_task:
-                number_targets += 1
-                if agent.health / agent.health_max > 0:
-                    #is alived
-                    survives += 1
-                    reward_survive += obj.args.reward_task_survive
-                    # Check enemies that has survided
-                    dicc_state = obj.env.get_state_dict()
-                    enemies = dicc_state['enemies']
-                    n_enemies_alived = sum(enemies[:,0])
-                    reward_survive -= obj.args.penal_survive*n_enemies_alived*(obj.args.reward_task_survive/obj.env.n_enemies)
-                
+    elif number_death == 0 and terminated:
+        survive = 1
+        reward_survive += obj.args.reward_task_survive
+        # Check enemies that has survided
+        dicc_state = obj.env.get_state_dict()
+        enemies = dicc_state['enemies']
+        n_enemies_alived = sum(enemies[:,0])
+        reward_survive -= obj.args.penal_survive*n_enemies_alived*(obj.args.reward_task_survive/obj.env.n_enemies)
+    elif number_death == 0 and not terminated:
+        reward_survive = 0
+
     max_reward = obj.args.reward_task_survive
 
     reward_survive /= max_reward / obj.env.reward_scale_rate
 
-    if survives == number_targets:
-        survive = 1
-    return reward_survive, survive 
+    return reward_survive, survive, number_death
 
 def reward_scalarization(obj,reward1,reward2):
     
@@ -167,18 +161,15 @@ def check_unit_task(obj,unit):
 
 
 def check_ally_death(obj,number_death):
-    number_targets = 0
-    deaths = 0
     if number_death == 0:
         for agent_id in range(obj.env.n_agents):
             agent = obj.env.get_unit_by_id(agent_id)
             agent_task = check_unit_task(obj,agent)
             if agent_task:
-                number_targets += 1
-                if agent.health == 0.0 and deaths<number_targets:
+                if agent.health == 0:
                     number_death = np.count_nonzero(obj.env.death_tracker_ally)
-                    deaths += 1
-
+                else:
+                    number_death = 0
     return number_death
 
 def reward_task_survive_old(obj):

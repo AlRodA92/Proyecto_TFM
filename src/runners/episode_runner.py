@@ -37,6 +37,16 @@ class EpisodeRunner:
         self.task_train_stats = {'dist':[],'objetive_reach':[]}
         self.task_test_stats = {'dist':[],'objetive_reach':[]}
 
+        if self.args.task == 'objetive':
+            self.task_train_stats = {'dist':[],'objetive_reach':[]}
+            self.task_test_stats = {'dist':[],'objetive_reach':[]}
+        elif self.args.task == 'kill':
+            self.task_train_stats = {'number_kill':[],'kill':[]}
+            self.task_test_stats = {'number_kill':[],'kill':[]}
+        elif self.args.task == 'survive': 
+            self.task_train_stats = {'survive':[],'number_death':[]}
+            self.task_test_stats = {'survive':[],'number_death':[]}
+
         # Log the first run
         self.log_train_stats_t = -1000000
 
@@ -69,6 +79,7 @@ class EpisodeRunner:
         task_reach = 0
         dist_prev = 0
         number_death = 0
+        survive = 0
         self.mac.init_hidden(batch_size=self.batch_size)
 
         while not terminated:
@@ -108,8 +119,12 @@ class EpisodeRunner:
                 task_reward += rewards[2]
             # Check survive task is selected
             elif self.args.task == "survive":
-                number_death = check_ally_death(self,number_death)
-
+                reward_survive, survive, number_death = reward_task_survive(self,terminated,number_death)
+                rewards = reward_scalarization(self,reward,reward_survive)
+                episode_return += rewards[0]
+                smac_reward += rewards[1]
+                task_reward += rewards[2]
+                
             post_transition_data = {
                 "actions": actions,
                 "reward": [(reward,)],
@@ -119,14 +134,6 @@ class EpisodeRunner:
             self.batch.update(post_transition_data, ts=self.t)
 
             self.t += 1
-
-        # Check survive task is selected
-        if self.args.task == "survive":
-            reward_survive, survive = reward_task_survive(self,number_death)
-            rewards = reward_scalarization(self,reward,reward_survive)
-            episode_return += rewards[0]
-            smac_reward += rewards[1]
-            task_reward += rewards[2]
 
         last_data = {
             "state": [self.env.get_state()],
@@ -140,7 +147,7 @@ class EpisodeRunner:
         self.batch.update({"actions": actions}, ts=self.t)
 
         cur_stats = self.test_stats if test_mode else self.train_stats
-        task_stats = self.task_train_stats if test_mode else self.task_test_stats
+        task_stats = self.task_test_stats if test_mode else self.task_train_stats
         cur_returns = self.test_returns if test_mode else self.train_returns
         log_prefix = "test_" if test_mode else ""
         cur_stats.update({k: cur_stats.get(k, 0) + env_info.get(k, 0) for k in set(cur_stats) | set(env_info)})
@@ -152,21 +159,11 @@ class EpisodeRunner:
             task_stats['dist'].append(dist)
             task_stats['objetive_reach'].append(task_reach)
         elif self.args.task == 'kill':
-            if bool(task_stats == {}):
-                task_stats = {'number_kill':[],'kill':[]}
-                task_stats['number_kill'].append(number_kill)
-                task_stats['kill'].append(death)
-            else: 
-                task_stats['number_kill'].append(number_kill)
-                task_stats['kill'].append(death)
-        elif self.args.task == 'survive':
-            if bool(task_stats == {}):
-                task_stats = {'survive':[],'number_death':[]}
-                task_stats['survive'].append(survive)
-                task_stats['number_death'].append(number_death)
-            else: 
-                task_stats['survive'].append(survive)
-                task_stats['number_death'].append(number_death)
+            task_stats['number_kill'].append(number_kill)
+            task_stats['kill'].append(death)
+        elif self.args.task == 'survive': 
+            task_stats['survive'].append(survive)
+            task_stats['number_death'].append(number_death)
 
         if not test_mode:
             self.t_env += self.t
@@ -177,30 +174,27 @@ class EpisodeRunner:
 
         if self.args.test_eval:
             self._log(cur_returns, cur_stats, log_prefix, task_stats)
-            task_stats.clear()
         elif test_mode and (len(self.test_returns) == self.args.test_nepisode):
             self._log(cur_returns, cur_stats, log_prefix, task_stats)
-            task_stats.clear()
         elif self.t_env - self.log_train_stats_t >= self.args.runner_log_interval:
             self._log(cur_returns, cur_stats, log_prefix, task_stats)
-            task_stats.clear()
             if hasattr(self.mac.action_selector, "epsilon"):
                 self.logger.log_stat("epsilon", self.mac.action_selector.epsilon, self.t_env)
             self.log_train_stats_t = self.t_env
 
         return self.batch
 
-    def _log(self, returns, stats, prefix, task_stats):
+    def _log(self, returns, stats, prefix, stats2):
         rewards = ['_','_smac_','_'+self.args.task+'_']
         for idx,return_type in enumerate(returns):
             self.logger.log_stat(prefix + "return" + rewards[idx] + "mean", np.mean(return_type), self.t_env)
             self.logger.log_stat(prefix + "return" + rewards[idx] + "std", np.std(return_type), self.t_env)
             returns[idx].clear()
 
-        for k, v in task_stats.items():
+        for k, v in stats2.items():
             self.logger.log_stat(prefix + k + "_mean", np.mean(v), self.t_env)
-            self.logger.log_stat(prefix + k + "_mean", np.std(v), self.t_env)
-            # task_stats.clear()
+            self.logger.log_stat(prefix + k + "_std", np.std(v), self.t_env)
+            stats2[k].clear()
 
         for k, v in stats.items():
             if k != "n_episodes":
