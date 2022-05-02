@@ -6,7 +6,6 @@ def reward_task_objetive(obj,task_reward,dist_prev,time):
 
     # Initialization
     reward_objetive = 0
-    number_targets = 0
   
     if obj.env.map_name == "Multi_task_6m1M1Gh1scv_vs_8m1M1Gh":
         x_agent_init = 15.5
@@ -37,7 +36,6 @@ def reward_task_objetive(obj,task_reward,dist_prev,time):
         agent = obj.env.get_unit_by_id(agent_id)
         agent_task = check_unit_task(obj,agent)
         if agent_task:
-            number_targets += 1
             x_agent = agent.pos.x
             y_agent = agent.pos.y
             dist = math.hypot(x_target-x_agent, y_target-y_agent)
@@ -45,12 +43,12 @@ def reward_task_objetive(obj,task_reward,dist_prev,time):
             if dist < obj.args.eps_objetive:
                 reward_objetive = obj.args.reward_reach*obj.env.episode_limit - obj.args.obj_penal*task_reward
             elif dist < epsilon:
-                reward_objetive = obj.args.goal_gamma*(1-dist/dist_init)
                 dist_prev = dist
-            else:  
+                reward_objetive = obj.args.goal_gamma*(1-dist/dist_init)
+            elif dist > epsilon: 
                 reward_objetive = 0
                 
-    max_reward = number_targets*obj.args.reward_reach*obj.env.episode_limit
+    max_reward = obj.args.reward_reach*obj.env.episode_limit
     reward_objetive /= max_reward / obj.env.reward_scale_rate
 
     return reward_objetive, dist, dist_prev
@@ -111,7 +109,7 @@ def reward_task_survive(obj,terminated,number_death):
     number_death = check_ally_death(obj,number_death)
 
     if number_death != 0 and terminated:
-        reward_survive -= obj.args.survive_number_death*(obj.env.n_agents-number_death)*(obj.args.reward_task_survive/obj.env.n_agents)
+        reward_survive -= obj.args.death_penal*(obj.env.n_agents-number_death)*(obj.args.reward_task_survive/obj.env.n_agents)
     elif number_death == 0 and terminated:
         survive = 1
         reward_survive += obj.args.reward_task_survive
