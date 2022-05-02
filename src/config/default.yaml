@@ -48,22 +48,22 @@ label: "default_label"
 hypergroup: null
 
 # --- Multi-Objetive parameters ---
-task: 'survive'
-unit_task: 'SCV'
+task: 'objetive'
+unit_task: 'Marauder'
 # Task: Reach Objetive
 eps_objetive: 3 # Distance to consider that the agent have reached the objetive
-goal_gamma: 1 # Parameter or weight of the continous reward
-reward_reach: 2 # Reward for reach the objetive
+goal_gamma: 60 # Parameter or weight of the continous reward
+reward_reach: 4 # Reward for reach the objetive
 obj_penal: 0
 # Task: Kill an Specific enemy
 reward_kill_target: 4 # Additional reward for kill the enemy
 reward_hit_target: 6 # Additional reward for hit the enemy
 # Task: Specific agent must survive
-reward_task_survive: 40 # Reward for the survival
+reward_task_survive: 100 # Reward for the survival
 penal_survive: 1
 death_penal: 0
 
 scalarization_method: 'lineal' # Type of reward scalarization
 weight1: 1
-weight2: 10
+weight2: 20
 

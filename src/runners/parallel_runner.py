@@ -110,6 +110,7 @@ class ParallelRunner:
         task_returns = [0 for _ in range(self.batch_size)]
         episode_lengths = [0 for _ in range(self.batch_size)]
         dist = [0 for _ in range(self.batch_size)]
+        dist_prev = [0 for _ in range(self.batch_size)]
         task_reach = [0 for _ in range(self.batch_size)]
         death = [0 for _ in range(self.batch_size)]
         number_kill = [0 for _ in range(self.batch_size)]
@@ -139,7 +140,7 @@ class ParallelRunner:
                 if idx in envs_not_terminated: # We produced actions for this env
                     if not terminated[idx]: # Only send the actions to the env if it hasn't terminated
                         if self.args.task == 'objetive':
-                            parent_conn.send(("step", (cpu_actions[action_idx],task_returns[idx],dist[idx],self.t)))
+                            parent_conn.send(("step", (cpu_actions[action_idx],task_returns[idx],dist_prev[idx],self.t)))
                         elif self.args.task == 'survive':
                             parent_conn.send(("step", (cpu_actions[action_idx],number_death[idx])))
                         else:
@@ -175,6 +176,7 @@ class ParallelRunner:
                         smac_returns[idx] += data["smac_reward"]
                         episode_returns[idx] += data["reward"]
                         dist[idx] = data["dist"]
+                        dist_prev[idx] = data["dist_prev"]
                         task_reach[idx] = data["task_reach"]
                     elif self.args.task == "kill": 
                         task_returns[idx] += data["task_reward"]
@@ -300,7 +302,7 @@ def env_worker(remote, env_fn, args):
                 # Check if the multi-objetive option is set and compute 
                 # the aditional reward and
                 # the total reward scalarization
-                reward_objetive,dist = reward_task_objetive(obj,task_reward,dist_prev,time)
+                reward_objetive,dist,dist_prev = reward_task_objetive(obj,task_reward,dist_prev,time)
                 if dist < obj.args.eps_objetive:
                     task_reach = 1
                     terminated = True
@@ -327,7 +329,8 @@ def env_worker(remote, env_fn, args):
                     "smac_reward": smac_reward,
                     "task_reward": task_reward,
                     "task_reach": task_reach,
-                    "dist": dist
+                    "dist": dist,
+                    "dist_prev": dist_prev
                 })
             elif obj.args.task == 'kill':
                 actions = data
