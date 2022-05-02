@@ -164,7 +164,7 @@ class EpisodeRunner:
         elif self.args.task == 'survive': 
             task_stats['survive'].append(survive)
             task_stats['number_death'].append(number_death)
-
+        
         if not test_mode:
             self.t_env += self.t
 
@@ -172,9 +172,9 @@ class EpisodeRunner:
         cur_returns[1].append(smac_reward)
         cur_returns[2].append(task_reward)
 
-        if self.args.test_eval:
-            self._log(cur_returns, cur_stats, log_prefix, task_stats)
-        elif test_mode and (len(self.test_returns) == self.args.test_nepisode):
+        # if self.args.test_eval:
+        #     self._log(cur_returns, cur_stats, log_prefix, task_stats)
+        if test_mode and (len(self.test_returns[0]) == self.args.test_nepisode):
             self._log(cur_returns, cur_stats, log_prefix, task_stats)
         elif self.t_env - self.log_train_stats_t >= self.args.runner_log_interval:
             self._log(cur_returns, cur_stats, log_prefix, task_stats)
