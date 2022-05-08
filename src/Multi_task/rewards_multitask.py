@@ -53,48 +53,51 @@ def reward_task_objetive(obj,task_reward,dist_prev,time):
 
     return reward_objetive, dist, dist_prev
 
-def reward_task_kill(obj):
+def reward_task_kill(obj,number_kill):
 
     #Initialization
     reward_target = 0
-    number_targets = 0
-    deaths = 0
     kill = 0
     delta_enemy = 0
     delta_deaths = 0
-    number_kill = 0
+    if number_kill != 0:
+        number_kill = number_kill
+    else:
+        number_kill = 0
     # Target enemy damage and killing
     for e_id, e_unit in obj.env.enemies.items():
         agent_task = check_unit_task(obj,e_unit)
         if agent_task:
-            number_targets += 1
             if not obj.env.death_tracker_enemy[e_id]:
                 prev_health = (
                     obj.env.previous_enemy_units[e_id].health
                     + obj.env.previous_enemy_units[e_id].shield
                 )
-                if e_unit.health == 0:
+                if e_unit.health == 0.0:
                     obj.env.death_tracker_enemy[e_id] = 1
                     delta_deaths += (obj.env.reward_death_value*obj.args.reward_kill_target)
                     delta_enemy += (prev_health*obj.args.reward_hit_target)
-                    deaths += 1
+                    kill = 1
                     number_kill = np.count_nonzero(obj.env.death_tracker_enemy)
                 else:
                     delta_enemy += (prev_health - e_unit.health - e_unit.shield) * obj.args.reward_hit_target
+            else:
+                kill = 1
+                if number_kill == 0:
+                    number_kill = np.count_nonzero(obj.env.death_tracker_enemy)
+                else:
+                    number_kill = number_kill
 
     reward_target += abs(delta_enemy + delta_deaths)
     
     # Set the max reward 
     max_reward = (
-        (obj.env.n_enemies - number_targets) * obj.env.reward_death_value +
-        (number_targets * obj.args.reward_kill_target * obj.env.reward_death_value) +
+        (obj.env.n_enemies - 1) * obj.env.reward_death_value +
+        (1 * obj.args.reward_kill_target * obj.env.reward_death_value) +
          obj.env.reward_win
         )
 
     reward_target /= max_reward / obj.env.reward_scale_rate
-
-    if deaths == number_targets:
-        kill = 1
 
     return reward_target, kill, number_kill
 

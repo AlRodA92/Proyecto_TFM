@@ -6,7 +6,7 @@ import numpy as np
 import sys
 
 # Get the multitask functions
-sys.path.insert(0,'/home/aroman/TFM/Código/Proyecto_TFM/Proyecto_TFM/src/Multi_task')
+sys.path.insert(0,'/home/aroman/Proyecto_TFM/Proyecto_TFM/src/Multi_task')
 
 from rewards_multitask import reward_task_objetive, reward_task_survive, reward_task_kill, reward_scalarization, check_ally_death
 
@@ -79,6 +79,7 @@ class EpisodeRunner:
         task_reach = 0
         dist_prev = 0
         number_death = 0
+        number_kill = 0
         survive = 0
         self.mac.init_hidden(batch_size=self.batch_size)
 
@@ -112,7 +113,7 @@ class EpisodeRunner:
                 smac_reward += rewards[1]
                 task_reward += rewards[2]
             elif self.args.task == 'kill':
-                reward_kill, death, number_kill = reward_task_kill(self)
+                reward_kill, death, number_kill = reward_task_kill(self,number_kill)
                 rewards = reward_scalarization(self,reward,reward_kill)
                 episode_return += rewards[0]
                 smac_reward += rewards[1]
@@ -172,8 +173,8 @@ class EpisodeRunner:
         cur_returns[1].append(smac_reward)
         cur_returns[2].append(task_reward)
 
-        # if self.args.test_eval:
-        #     self._log(cur_returns, cur_stats, log_prefix, task_stats)
+        if self.args.test_eval:
+            self._log(cur_returns, cur_stats, log_prefix, task_stats)
         if test_mode and (len(self.test_returns[0]) == self.args.test_nepisode):
             self._log(cur_returns, cur_stats, log_prefix, task_stats)
         elif self.t_env - self.log_train_stats_t >= self.args.runner_log_interval:

@@ -7,7 +7,7 @@ import torch as th
 import sys
 
 # Get the multitask functions
-sys.path.insert(0,'/home/aroman/TFM/Código/Proyecto_TFM/Proyecto_TFM/src/Multi_task')
+sys.path.insert(0,'/home/aroman/Proyecto_TFM/Proyecto_TFM/src/Multi_task')
 
 from rewards_multitask import reward_task_objetive, reward_task_survive, reward_task_kill, reward_scalarization, check_ally_death
 
@@ -143,6 +143,8 @@ class ParallelRunner:
                             parent_conn.send(("step", (cpu_actions[action_idx],task_returns[idx],dist_prev[idx],self.t)))
                         elif self.args.task == 'survive':
                             parent_conn.send(("step", (cpu_actions[action_idx],number_death[idx])))
+                        elif self.args.task == "kill":
+                            parent_conn.send(("step", (cpu_actions[action_idx],number_kill[idx])))
                         else:
                             parent_conn.send(("step", cpu_actions[action_idx]))
                     action_idx += 1 # actions is not a list over every env
@@ -333,13 +335,13 @@ def env_worker(remote, env_fn, args):
                     "dist_prev": dist_prev
                 })
             elif obj.args.task == 'kill':
-                actions = data
+                actions, number_kill = data
                 # Take a step in the environment
                 reward, terminated, env_info = env.step(actions)
                 # Check if the multi-objetive option is set and compute 
                 # the aditional reward and
                 # the total reward scalarization
-                reward_kill, death, number_kill = reward_task_kill(obj)
+                reward_kill, death, number_kill = reward_task_kill(obj,number_kill)
                 rewards = reward_scalarization(obj,reward,reward_kill)
                 reward = rewards[0]
                 smac_reward = rewards[1]

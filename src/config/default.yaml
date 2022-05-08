@@ -49,7 +49,7 @@ hypergroup: null
 
 # --- Multi-Objetive parameters ---
 task: 'objetive'
-unit_task: 'Marauder'
+unit_task: 'SCV'
 # Task: Reach Objetive
 eps_objetive: 3 # Distance to consider that the agent have reached the objetive
 goal_gamma: 60 # Parameter or weight of the continous reward
@@ -65,5 +65,5 @@ death_penal: 0
 
 scalarization_method: 'lineal' # Type of reward scalarization
 weight1: 1
-weight2: 20
+weight2: 4
 
